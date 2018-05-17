@@ -38,84 +38,133 @@
 #include <termios.h>
 #include <sys/types.h>
 #include <sys/mman.h>
+#include <time.h>
+#include <sys/time.h>
   
 #define FATAL do { fprintf(stderr, "Error at line %d, file %s (%d) [%s]\n", \
   __LINE__, __FILE__, errno, strerror(errno)); exit(1); } while(0)
  
-#define MAP_SIZE 4096UL
+#define MAP_SIZE 0x100000
 #define MAP_MASK (MAP_SIZE - 1)
 
+struct timespec gts0,gts1;
+int gfd;
+void *gmap_base,*gvirt_addr_data;
+void *gvirt_addr_clk;
+unsigned long gd1,gd0;
+unsigned long gc1,gc0;
+
+int mydelay(int n)
+{
+    int i,s=0;
+    for(i=0;i<n;i++) s+=i;
+    return s;
+}
+int mydelay_n1(int n)
+{
+    asm("nop");
+    asm("nop");
+    asm("nop");
+    asm("nop");
+    asm("nop");
+    asm("nop");
+    asm("nop");
+    asm("nop");
+    return n+1;
+}
+int mydelay_n1nop(int n)
+{
+    asm("nop");
+    asm("nop");
+    return n+1;
+}
+void output_d(int v)
+{
+    if(v){
+      *((unsigned long *) gvirt_addr_data) = gd1;
+      mydelay_n1(0);
+      *((unsigned long *) gvirt_addr_clk) = gc1;
+      mydelay_n1(1);
+      mydelay_n1(2);
+      *((unsigned long *) gvirt_addr_clk) = gc0;
+      return;
+    }
+    else{
+      *((unsigned long *) gvirt_addr_data) = gd0;
+      mydelay_n1(0);
+      *((unsigned long *) gvirt_addr_clk) = gc1;
+      mydelay_n1(1);
+      mydelay_n1(2);
+      *((unsigned long *) gvirt_addr_clk) = gc0;
+      return;
+    }
+}
 int main(int argc, char **argv) {
-    int fd;
-    void *map_base, *virt_addr; 
-	unsigned long read_result, writeval;
-	off_t target;
-	int access_type = 'w';
+    unsigned long read_result, writeval;
+    off_t target;
+    off_t target_clk;
+    int access_type = 'w';
+    int i;
+    int ndelay=0;
+    double d,d0,d1;
+    char *pbuffer;
+    int v;
 	
-	if(argc < 2) {
-		fprintf(stderr, "\nUsage:\t%s { address } [ type [ data ] ]\n"
-			"\taddress : memory address to act upon\n"
-			"\ttype    : access operation type : [b]yte, [h]alfword, [w]ord\n"
-			"\tdata    : data to be written\n\n",
-			argv[0]);
-		exit(1);
-	}
-	target = strtoul(argv[1], 0, 0);
+    pbuffer = malloc(0x1400000);
+    if(pbuffer==NULL){
+      printf("memory not enough\n");
+      return -1;
+    }
+    for(i=0;i<0x1400000;i++) pbuffer[i]=0x55;
+    ndelay=atoi(argv[1]);
 
-	if(argc > 2)
-		access_type = tolower(argv[2][0]);
+    target = 0x209c000;
+    target_clk = 0x20ac000;
 
-
-    if((fd = open("/dev/mem", O_RDWR | O_SYNC)) == -1) FATAL;
-    printf("/dev/mem opened.\n"); 
-    fflush(stdout);
+    if((gfd = open("/dev/mem", O_RDWR | O_SYNC)) == -1) FATAL;
     
     /* Map one page */
-    map_base = mmap(0, MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, target & ~MAP_MASK);
-    if(map_base == (void *) -1) FATAL;
-    printf("Memory mapped at address %p.\n", map_base); 
-    fflush(stdout);
+    gmap_base = mmap(0, MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, gfd, target & ~MAP_MASK);
+    if(gmap_base == (void *) -1) FATAL;
     
-    virt_addr = map_base + (target & MAP_MASK);
-    switch(access_type) {
-		case 'b':
-			read_result = *((unsigned char *) virt_addr);
-			break;
-		case 'h':
-			read_result = *((unsigned short *) virt_addr);
-			break;
-		case 'w':
-			read_result = *((unsigned long *) virt_addr);
-			break;
-		default:
-			fprintf(stderr, "Illegal data type '%c'.\n", access_type);
-			exit(2);
-	}
-    printf("Value at address 0x%X (%p): 0x%X\n", target, virt_addr, read_result); 
-    fflush(stdout);
+    gvirt_addr_data = gmap_base + (target & MAP_MASK);
+    gvirt_addr_clk = gmap_base + (target_clk & MAP_MASK);
+    read_result = *((unsigned long *) gvirt_addr_data);
+    gd1=read_result | 0x200;
+    gd0=read_result & 0xfffffdff;
+    read_result = *((unsigned long *) gvirt_addr_clk);
+    gc1=read_result | 0x200;
+    gc0=read_result & 0xfffffdff;
 
-	if(argc > 3) {
-		writeval = strtoul(argv[3], 0, 0);
-		switch(access_type) {
-			case 'b':
-				*((unsigned char *) virt_addr) = writeval;
-				read_result = *((unsigned char *) virt_addr);
-				break;
-			case 'h':
-				*((unsigned short *) virt_addr) = writeval;
-				read_result = *((unsigned short *) virt_addr);
-				break;
-			case 'w':
-				*((unsigned long *) virt_addr) = writeval;
-				read_result = *((unsigned long *) virt_addr);
-				break;
-		}
-		printf("Written 0x%X; readback 0x%X\n", writeval, read_result); 
-		fflush(stdout);
-	}
-	
-	if(munmap(map_base, MAP_SIZE) == -1) FATAL;
-    close(fd);
+    clock_gettime(CLOCK_REALTIME,&gts0);
+
+    for(i=0;i<0x1000000;i++){
+      *((unsigned long *) gvirt_addr_data) = gd1;
+      *((unsigned long *) gvirt_addr_data) = gd0;
+      //v = pbuffer[i] & 0x0ff;
+#if 0
+      output_d(v & 0x1);
+      output_d(v & 0x2);
+      output_d(v & 0x4);
+      output_d(v & 0x8);
+      output_d(v & 0x10);
+      output_d(v & 0x20);
+      output_d(v & 0x40);
+      output_d(v & 0x80);
+#endif
+    }
+
+    clock_gettime(CLOCK_REALTIME,&gts1);
+    d0 = gts0.tv_sec + 0.000000001 * gts0.tv_nsec;
+    d1 = gts1.tv_sec + 0.000000001 * gts1.tv_nsec;
+    d = d1 - d0;
+    printf(" time : %.9f \n",d);
+
+    *((unsigned long *) gvirt_addr_data) = gd1;
+    *((unsigned long *) gvirt_addr_clk) = gc1;
+    if(munmap(gmap_base, MAP_SIZE) == -1) FATAL;
+    close(gfd);
+    free(pbuffer);
     return 0;
 }
 
