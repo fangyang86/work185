@@ -126,7 +126,6 @@ int main(int argc, char **argv) {
     target_status = 0x20b4008;
 
 
-
     target = 0x209c000;
     target_clk = 0x20ac000;
 
@@ -135,12 +134,14 @@ int main(int argc, char **argv) {
     /* Map one page */
     gmap_base = mmap(0, MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, gfd, target & ~MAP_MASK);
     if(gmap_base == (void *) -1) FATAL;
-    
+
     gvirt_addr_data = gmap_base + (target & MAP_MASK);
     gvirt_addr_clk = gmap_base + (target_clk & MAP_MASK);
     gvirt_data = gmap_base + (target_data & MAP_MASK);
     gvirt_dir = gmap_base + (target_dir & MAP_MASK);
     gvirt_status = gmap_base + (target_status & MAP_MASK);
+
+    printf(" break 0 \n");
 
     v_dir = *((unsigned long *) gvirt_dir);
     v_dir |= 0xc7;//////////// gpio 0,1,2,6,7
@@ -148,17 +149,18 @@ int main(int argc, char **argv) {
     v_data = *((unsigned long *) gvirt_data);
     v_data1 = v_data | 0x00c7;
     v_data0 = v_data & 0xffffff38;
+    printf(" break 01\n");
     for(i=0;i<0x100000;i++){
         *((unsigned long *) gvirt_data) = v_data1;
-        printf(" set 1\n")
+        printf(" set 1\n");
         v_status = *((unsigned long *) gvirt_status);
-        printf(" status: %08x\n",v_status)
+        printf(" status: %08x\n",v_status);
         *((unsigned long *) gvirt_data) = v_data0;
-        printf(" set 0\n")
+        printf(" set 0\n");
         v_status = *((unsigned long *) gvirt_status);
-        printf(" status: %08x\n",v_status)
+        printf(" status: %08x\n",v_status);
     }
-    printf(" loop set gpio7 end\n")
+    printf(" loop set gpio7 end\n");
     
 
 
@@ -197,8 +199,13 @@ int main(int argc, char **argv) {
 
     *((unsigned long *) gvirt_addr_data) = gd1;
     *((unsigned long *) gvirt_addr_clk) = gc1;
+
+
+exit_0:
     if(munmap(gmap_base, MAP_SIZE) == -1) FATAL;
+exit_1:
     close(gfd);
+exit_2:
     free(pbuffer);
     return 0;
 }
