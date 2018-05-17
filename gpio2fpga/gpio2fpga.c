@@ -51,6 +51,7 @@ struct timespec gts0,gts1;
 int gfd;
 void *gmap_base,*gvirt_addr_data;
 void *gvirt_addr_clk;
+void *gvirt_data,*gvirt_dir,*gvirt_status;
 unsigned long gd1,gd0;
 unsigned long gc1,gc0;
 
@@ -103,6 +104,8 @@ int main(int argc, char **argv) {
     unsigned long read_result, writeval;
     off_t target;
     off_t target_clk;
+    off_t target_data,target_dir,target_status;// gpio7
+    unsigned long v_data,v_dir,v_status,v_data0,v_data1;
     int access_type = 'w';
     int i;
     int ndelay=0;
@@ -118,6 +121,12 @@ int main(int argc, char **argv) {
     for(i=0;i<0x1400000;i++) pbuffer[i]=0x55;
     ndelay=atoi(argv[1]);
 
+    target_data=0x20b4000;
+    target_dir=0x20b4004;
+    target_status = 0x20b4008;
+
+
+
     target = 0x209c000;
     target_clk = 0x20ac000;
 
@@ -129,6 +138,32 @@ int main(int argc, char **argv) {
     
     gvirt_addr_data = gmap_base + (target & MAP_MASK);
     gvirt_addr_clk = gmap_base + (target_clk & MAP_MASK);
+    gvirt_data = gmap_base + (target_data & MAP_MASK);
+    gvirt_dir = gmap_base + (target_dir & MAP_MASK);
+    gvirt_status = gmap_base + (target_status & MAP_MASK);
+
+    v_dir = *((unsigned long *) gvirt_dir);
+    v_dir |= 0xc7;//////////// gpio 0,1,2,6,7
+    *((unsigned long *) gvirt_dir) = v_dir;
+    v_data = *((unsigned long *) gvirt_data);
+    v_data1 = v_data | 0x00c7;
+    v_data0 = v_data & 0xffffff38;
+    for(i=0;i<0x100000;i++){
+        *((unsigned long *) gvirt_data) = v_data1;
+        printf(" set 1\n")
+        v_status = *((unsigned long *) gvirt_status);
+        printf(" status: %08x\n",v_status)
+        *((unsigned long *) gvirt_data) = v_data0;
+        printf(" set 0\n")
+        v_status = *((unsigned long *) gvirt_status);
+        printf(" status: %08x\n",v_status)
+    }
+    printf(" loop set gpio7 end\n")
+    
+
+
+
+
     read_result = *((unsigned long *) gvirt_addr_data);
     gd1=read_result | 0x200;
     gd0=read_result & 0xfffffdff;
