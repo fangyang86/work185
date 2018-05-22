@@ -1,4 +1,6 @@
 
+initgpio.bat , loopclk.bat , /bin/sh
+using gpiofs , 
 
 gpio2fpga:
 arm-linux-gcc -lrt gpio2fgpa.c
