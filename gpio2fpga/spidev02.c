@@ -33,7 +33,7 @@ static int gfdspi;
 static const char *device = "/dev/spidev0.0";
 static uint8_t mode;
 static uint8_t bits = 32;
-static uint32_t speed = 48000000;
+static uint32_t speed = 32000000;
 static uint16_t delay;
 
 //static void transfer(int fd)
